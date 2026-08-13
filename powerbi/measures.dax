@@ -1,67 +1,59 @@
 // =============================================================================
-// Canadian Mortgage & Housing Analytics - DAX measure library
+// DAX measures for the Power BI report.
 //
-// Load order in Power BI: import the star (data/exports/dimensions + facts),
-// mark dim_date as the date table on [date], build the relationships listed in
-// powerbi/model-setup.md, then paste these measures into a "_Measures" table.
+// DAX is the formula language Power BI uses. A "measure" is a calculation that
+// gets worked out fresh depending on what the user has filtered - pick Ontario
+// and 2026, and [Housing Starts] recalculates for just that.
 //
-// Four rules run through everything here, and each exists because breaking it
-// produces a number that looks reasonable and is wrong:
+// Copy these into Power BI (see setup.md for how).
 //
-//   1. RATES ARE RATIOS OF SUMS, NEVER AVERAGES OF RATES.
-//      AVERAGE(arrears_rate_pct) across regions weights Prince Edward Island
-//      equally with Ontario. The correct national rate is
-//      SUM(arrears) / SUM(total_mortgages).
 //
-//   2. COVERAGE IS PART OF THE GRAIN.
-//      fact_housing_activity holds four overlapping statistical universes.
-//      Any measure that sums units without pinning coverage silently
-//      quadruple-counts, so the base measures refuse to return a number when
-//      more than one coverage is in filter context.
+// THREE RULES THAT EVERYTHING HERE FOLLOWS
+// -----------------------------------------
+// These aren't style preferences. Breaking any of them gives you a number that
+// looks perfectly reasonable and is wrong, which is the worst kind of bug.
 //
-//   3. PUBLISHER SUBTOTALS ARE EXCLUDED BY DEFAULT.
-//      dim_geography.is_aggregate and dim_credit_product.is_leaf mark rows that
-//      sit beside their own children. Every additive measure filters them.
+// 1. To average a rate, divide the totals - don't average the rates.
+//    Canada's arrears rate is NOT the average of the 8 regional rates. Ontario
+//    has 2.1 million mortgages and PEI has a few thousand, so averaging their
+//    rates treats them as equally important. Add up all the arrears, add up
+//    all the mortgages, then divide.
 //
-//   4. STOCKS ARE SEMI-ADDITIVE.
-//      Units under construction is a level, not a flow. Summing it across
-//      months counts the same dwelling repeatedly; the correct aggregation over
-//      time is the last non-blank period.
+// 2. Never add up two coverages.
+//    The "big metro areas" numbers are already included in the "towns of
+//    10,000+" numbers. Add them together and you count the same houses twice.
+//    The measures below refuse to return anything if more than one is picked.
+//
+// 3. Leave out the publisher's own totals.
+//    dim_geography[is_aggregate] and dim_credit_product[is_total] mark rows
+//    that are totals of other rows. Every measure filters them out.
 // =============================================================================
 
 
 // -----------------------------------------------------------------------------
-// SECTION 0 - guards
+// Safety check for rule 2
 // -----------------------------------------------------------------------------
 
-// Returns TRUE when exactly one coverage is in context. Every housing volume
-// measure gates on this. Better to show a clear instruction than a wrong total.
-Coverage Is Single =
-VAR CoverageCount = DISTINCTCOUNT ( dim_coverage[coverage_name] )
-RETURN CoverageCount = 1
+// TRUE only when exactly one coverage is selected.
+One Coverage Selected =
+DISTINCTCOUNT ( dim_coverage[coverage_name] ) = 1
 
+// Put this on a card at the top of any page with housing numbers. Better to
+// show an instruction than a number that's twice what it should be.
 Coverage Warning =
 IF (
-    NOT [Coverage Is Single],
-    "Select a single coverage — the four universes overlap and cannot be summed together."
-)
-
-// Default coverage, used by measures that need to pick one deterministically.
-Default Coverage =
-CALCULATE (
-    SELECTEDVALUE ( dim_coverage[coverage_name] ),
-    dim_coverage[is_default] = TRUE (),
-    REMOVEFILTERS ( dim_coverage )
+    NOT [One Coverage Selected],
+    "Pick ONE coverage. The metro areas are already inside the towns figure, so adding both counts houses twice."
 )
 
 
 // -----------------------------------------------------------------------------
-// SECTION 1 - housing activity, base measures
+// Housing - the basic numbers
 // -----------------------------------------------------------------------------
 
 Housing Starts =
 IF (
-    [Coverage Is Single],
+    [One Coverage Selected],
     CALCULATE (
         SUM ( fact_housing_activity[units] ),
         dim_construction_stage[stage_short] = "Starts",
@@ -71,7 +63,7 @@ IF (
 
 Housing Completions =
 IF (
-    [Coverage Is Single],
+    [One Coverage Selected],
     CALCULATE (
         SUM ( fact_housing_activity[units] ),
         dim_construction_stage[stage_short] = "Completions",
@@ -79,60 +71,49 @@ IF (
     )
 )
 
-// SEMI-ADDITIVE. Units under construction is a stock: the same dwelling is
-// counted in every month it remains unfinished, so summing across months is
-// meaningless. Over a date range we take the last month that has data.
-Units Under Construction =
+// "Under construction" is a COUNT AT A MOMENT, not a monthly total. The same
+// house is still under construction next month, so adding up 12 months would
+// count it 12 times. Instead we take the most recent month in whatever range
+// is selected. (The jargon for this is "semi-additive".)
+Under Construction =
 IF (
-    [Coverage Is Single],
+    [One Coverage Selected],
     CALCULATE (
         SUM ( fact_housing_activity[units] ),
         dim_construction_stage[stage_short] = "Under construction",
         dim_geography[is_aggregate] = FALSE (),
-        LASTNONBLANK (
-            dim_date[date],
-            CALCULATE (
-                SUM ( fact_housing_activity[units] ),
-                dim_construction_stage[stage_short] = "Under construction"
-            )
-        )
+        LASTDATE ( dim_date[date] )
     )
 )
 
-// National totals regardless of the geography slicer - the denominator for
-// contribution analysis.
-Housing Starts (National) =
-CALCULATE ( [Housing Starts], REMOVEFILTERS ( dim_geography ) )
-
 
 // -----------------------------------------------------------------------------
-// SECTION 2 - time intelligence
+// Comparing to last year
 //
-// Housing data is violently seasonal (starts roughly double from January to
-// June in a normal year), so month-over-month on raw counts mostly measures the
-// weather. Year-over-year on the same calendar month is the correct control,
-// and the 12-month rolling total is the correct trend line.
+// Housing is extremely seasonal - hardly anything gets built in a Canadian
+// January. So comparing this month to last month mostly measures the weather.
+// Comparing to the SAME MONTH last year is the honest comparison, and a rolling
+// 12-month total is the honest trend line.
 // -----------------------------------------------------------------------------
 
-Housing Starts LY =
+Housing Starts Last Year =
 CALCULATE ( [Housing Starts], DATEADD ( dim_date[date], -12, MONTH ) )
 
-Housing Starts YoY =
-VAR Current = [Housing Starts]
-VAR Prior = [Housing Starts LY]
-RETURN IF ( NOT ISBLANK ( Current ) && NOT ISBLANK ( Prior ), Current - Prior )
+Housing Starts Change =
+[Housing Starts] - [Housing Starts Last Year]
 
-Housing Starts YoY % =
-VAR Prior = [Housing Starts LY]
-RETURN DIVIDE ( [Housing Starts YoY], Prior )   // DIVIDE, not "/", handles Prior = 0
+// DIVIDE instead of "/" because DIVIDE returns blank on divide-by-zero
+// instead of an error.
+Housing Starts Change % =
+DIVIDE ( [Housing Starts Change], [Housing Starts Last Year] )
 
-Housing Starts 12M =
+Housing Starts 12 Months =
 CALCULATE (
     [Housing Starts],
     DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )
 )
 
-Housing Completions 12M =
+Housing Completions 12 Months =
 CALCULATE (
     [Housing Completions],
     DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )
@@ -140,123 +121,101 @@ CALCULATE (
 
 
 // -----------------------------------------------------------------------------
-// SECTION 3 - the bottleneck measures
+// The bottleneck measures
 //
-// NOTE ON DATA AVAILABILITY: CMHC stopped publishing completions and
-// under-construction at province level after 2022-12. These measures only
-// return values under the "Census metropolitan areas" coverage for recent
-// periods. See docs/data-availability.md.
+// HEADS UP: CMHC stopped publishing completions and under-construction for
+// whole provinces after December 2022. They still publish all three for the
+// big metro areas. So these measures only work on "Big metro areas only" for
+// recent years - that's the data, not a bug.
 // -----------------------------------------------------------------------------
 
-// Below 1 means the pipeline is filling faster than it empties.
-Completion Ratio 12M =
-DIVIDE ( [Housing Completions 12M], [Housing Starts 12M] )
+// Under 1 means more homes are being started than finished.
+Completion Ratio =
+DIVIDE ( [Housing Completions 12 Months], [Housing Starts 12 Months] )
 
-// The headline bottleneck metric: at the current completion rate, how many
-// months to clear what has already been started?
+// The headline number: at the recent finishing rate, how many months to
+// finish everything currently under construction?
 Backlog Months =
-VAR MonthlyCompletionRate = DIVIDE ( [Housing Completions 12M], 12 )
-RETURN DIVIDE ( [Units Under Construction], MonthlyCompletionRate )
+DIVIDE ( [Under Construction], DIVIDE ( [Housing Completions 12 Months], 12 ) )
 
-Backlog Months LY =
+Backlog Months Last Year =
 CALCULATE ( [Backlog Months], DATEADD ( dim_date[date], -12, MONTH ) )
 
-Backlog Months YoY =
-VAR Current = [Backlog Months]
-VAR Prior = [Backlog Months LY]
-RETURN IF ( NOT ISBLANK ( Current ) && NOT ISBLANK ( Prior ), Current - Prior )
+Backlog Months Change =
+[Backlog Months] - [Backlog Months Last Year]
 
-// Built-but-unsold pressure.
-Absorptions 12M =
-CALCULATE (
-    SUM ( fact_market_absorption[absorptions] ),
-    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH ),
-    dim_geography[is_aggregate] = FALSE ()
-)
-
-Unabsorbed Inventory =
+// Finished homes still sitting empty.
+Unsold Inventory =
 CALCULATE (
     SUM ( fact_market_absorption[unabsorbed_inventory] ),
     dim_geography[is_aggregate] = FALSE (),
-    LASTNONBLANK (
-        dim_date[date],
-        CALCULATE ( SUM ( fact_market_absorption[unabsorbed_inventory] ) )
-    )
+    LASTDATE ( dim_date[date] )
 )
 
-Months of Inventory =
-DIVIDE ( [Unabsorbed Inventory], DIVIDE ( [Absorptions 12M], 12 ) )
+Homes Sold Or Rented =
+CALCULATE (
+    SUM ( fact_market_absorption[absorptions] ),
+    dim_geography[is_aggregate] = FALSE ()
+)
+
+Percent Unsold =
+DIVIDE ( [Unsold Inventory], [Unsold Inventory] + [Homes Sold Or Rented] )
 
 
 // -----------------------------------------------------------------------------
-// SECTION 4 - delinquency
+// Mortgage delinquency
 //
-// RULE 1 IN ACTION. The national arrears rate is NOT the average of the eight
-// regional rates. Ontario carries ~44% of Canadian mortgages and PEI a fraction
-// of a percent; averaging their rates equally overstates the national figure
-// by a wide margin. Always ratio-of-sums.
+// This section is rule 1 in action. Look at [Arrears Rate] below - it divides
+// two SUMs. That is the whole point.
 // -----------------------------------------------------------------------------
 
-Mortgages Outstanding =
+Total Mortgages =
 SUM ( fact_mortgage_arrears[total_mortgages] )
 
 Mortgages In Arrears =
 SUM ( fact_mortgage_arrears[mortgages_in_arrears] )
 
+// Correct: add up the parts, then divide.
 Arrears Rate =
-DIVIDE ( [Mortgages In Arrears], [Mortgages Outstanding] )
+DIVIDE ( [Mortgages In Arrears], [Total Mortgages] )
 
-// The rate exactly as CBA printed it. Kept alongside the derived measure so a
-// user can see that the two agree - and so the reconciliation story is visible
-// in the report, not just in the pipeline logs.
-Arrears Rate (Published) =
-AVERAGE ( fact_mortgage_arrears[arrears_rate_pct] ) / 100
-
-Arrears Rate LY =
+Arrears Rate Last Year =
 CALCULATE ( [Arrears Rate], DATEADD ( dim_date[date], -12, MONTH ) )
 
-// Expressed in PERCENTAGE POINTS, not percent change. A move from 0.20% to
-// 0.30% is +0.10pp; calling it "+50%" is technically true and useless.
-Arrears Rate YoY (pp) =
-VAR Current = [Arrears Rate]
-VAR Prior = [Arrears Rate LY]
-RETURN IF ( NOT ISBLANK ( Current ) && NOT ISBLANK ( Prior ), ( Current - Prior ) * 100 )
+// Reported in PERCENTAGE POINTS, not percent change. Going from 0.20% to
+// 0.30% is "up 0.10 percentage points". Calling that "up 50%" is technically
+// true but tells nobody anything useful.
+Arrears Rate Change (points) =
+( [Arrears Rate] - [Arrears Rate Last Year] ) * 100
 
-// Smoothed: monthly arrears counts are small enough to be jumpy.
-Arrears Rate 3M Avg =
+// Monthly arrears counts are small, so the line is jumpy. This smooths it.
+Arrears Rate 3 Month Average =
 AVERAGEX (
     DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -3, MONTH ),
     [Arrears Rate]
 )
 
-// The renewal-shock lens: the 5-year rate roughly when a borrower renewing now
-// had their payment set.
-Conventional 5Y Rate =
-AVERAGE ( fact_rate_environment[conventional_5yr_rate] )
+Mortgage Rate =
+AVERAGE ( fact_mortgage_rate[rate_5year] )
 
-Conventional 5Y Rate 18M Ago =
-CALCULATE ( [Conventional 5Y Rate], DATEADD ( dim_date[date], -18, MONTH ) )
-
-// Flags where a region's arrears count is suppressed for confidentiality, so a
-// blank reads as "not published" rather than "zero arrears".
-Arrears Suppressed Flag =
-IF (
-    CALCULATE ( MAX ( fact_mortgage_arrears[is_suppressed] ) ) = TRUE (),
-    "Suppressed by publisher"
-)
+// Most Canadian mortgages renew every few years. If rates jumped and arrears
+// start rising about 18 months later, that points at people struggling with a
+// bigger payment after renewing - rather than, say, job losses.
+Mortgage Rate 18 Months Ago =
+CALCULATE ( [Mortgage Rate], DATEADD ( dim_date[date], -18, MONTH ) )
 
 
 // -----------------------------------------------------------------------------
-// SECTION 5 - "what changed?" contribution analysis
+// "What changed?"
 //
-// Ranking places by growth RATE always surfaces the smallest ones: a 100% rise
-// in Charlottetown is 29 dwellings. Contribution-to-change answers the question
-// an executive is actually asking - who moved the national number?
+// Ranking places by growth PERCENTAGE always puts the tiniest places first - a
+// 100% rise in Charlottetown is 29 houses. This ranks by how much each place
+// actually moved the national total, which is what people mean when they ask.
 // -----------------------------------------------------------------------------
 
-Contribution to National Change =
-VAR ThisGeoChange = [Housing Starts YoY]
-VAR TotalAbsoluteMovement =
+Share Of National Change =
+VAR ThisPlace = [Housing Starts Change]
+VAR TotalMovement =
     SUMX (
         CALCULATETABLE (
             VALUES ( dim_geography[geo_name] ),
@@ -264,147 +223,99 @@ VAR TotalAbsoluteMovement =
             dim_geography[is_aggregate] = FALSE (),
             dim_geography[geo_level] = SELECTEDVALUE ( dim_geography[geo_level] )
         ),
-        ABS ( [Housing Starts YoY] )
+        ABS ( [Housing Starts Change] )
     )
-RETURN DIVIDE ( ThisGeoChange, TotalAbsoluteMovement )
+RETURN DIVIDE ( ThisPlace, TotalMovement )
 
-// Rank by absolute movement so a large decline ranks as highly as a large rise.
-Movement Rank =
-RANKX (
-    CALCULATETABLE (
-        VALUES ( dim_geography[geo_name] ),
-        REMOVEFILTERS ( dim_geography ),
-        dim_geography[is_aggregate] = FALSE (),
-        dim_geography[geo_level] = SELECTEDVALUE ( dim_geography[geo_level] )
-    ),
-    ABS ( [Housing Starts YoY] ),
-    ,
-    DESC,
-    DENSE
-)
-
-// Narrative label for a card visual - the dashboard should say what changed,
-// not merely plot it.
-What Changed Headline =
-VAR Change = [Housing Starts YoY]
-VAR Pct = [Housing Starts YoY %]
-VAR Direction = IF ( Change >= 0, "up", "down" )
+// A sentence for a card at the top of the page. A dashboard should say what
+// happened, not just draw it and leave the reader to work it out.
+Headline =
+VAR Change = [Housing Starts Change]
+VAR Percent = [Housing Starts Change %]
+VAR UpOrDown = IF ( Change >= 0, "up", "down" )
 VAR Place = SELECTEDVALUE ( dim_geography[geo_name], "Canada" )
 RETURN
     IF (
         ISBLANK ( Change ),
-        "No comparable period",
-        Place & ": starts " & Direction & " "
-            & FORMAT ( ABS ( Change ), "#,0" ) & " units ("
-            & FORMAT ( ABS ( Pct ), "0.0%" ) & ") vs the same month last year"
+        "No comparable month last year",
+        Place & ": housing starts " & UpOrDown & " "
+            & FORMAT ( ABS ( Change ), "#,0" ) & " homes ("
+            & FORMAT ( ABS ( Percent ), "0.0%" ) & ") vs the same month last year"
     )
 
 
 // -----------------------------------------------------------------------------
-// SECTION 6 - mortgage credit
-//
-// dim_credit_product[is_leaf] = FALSE marks the publisher's own subtotals,
-// which sit in the table beside their children. Summing without this filter
-// double-counts roughly 30 of 102 members.
+// Mortgage lending
 // -----------------------------------------------------------------------------
 
-Funds Advanced =
+// The is_total filter is rule 3. Rows starting with "Total," are subtotals of
+// the rows below them, so without this every figure roughly doubles.
+New Mortgage Lending =
 CALCULATE (
     SUM ( fact_mortgage_originations[funds_advanced] ),
-    dim_credit_product[is_leaf] = TRUE ()
+    dim_credit_product[is_total] = FALSE ()
 )
 
-Funds Advanced 12M =
+New Mortgage Lending 12 Months =
 CALCULATE (
-    [Funds Advanced],
+    [New Mortgage Lending],
     DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )
 )
 
-Funds Advanced YoY % =
-VAR Prior = CALCULATE ( [Funds Advanced], DATEADD ( dim_date[date], -12, MONTH ) )
-RETURN DIVIDE ( [Funds Advanced] - Prior, Prior )
-
-// Stock, not flow: take the period-end level.
-Mortgage Balance Outstanding =
-CALCULATE (
-    SUM ( fact_mortgage_originations[outstanding_balance] ),
-    dim_credit_product[is_leaf] = TRUE (),
-    LASTNONBLANK (
-        dim_date[date],
-        CALCULATE ( SUM ( fact_mortgage_originations[outstanding_balance] ) )
-    )
-)
-
-// A weighted average, never a plain average of rates. Weighting by funds
-// advanced is what makes "effective rate on new lending" mean anything.
-Effective Rate (Weighted) =
+// Rule 1 again. Averaging interest rates treats a $1 million mortgage and a
+// $100 million one as equally important. Weighting by how much was actually
+// lent is what makes this mean anything.
+Average Rate On New Lending =
 DIVIDE (
     SUMX (
         fact_mortgage_originations,
-        fact_mortgage_originations[effective_rate] * fact_mortgage_originations[funds_advanced]
+        fact_mortgage_originations[interest_rate] * fact_mortgage_originations[funds_advanced]
     ),
     SUM ( fact_mortgage_originations[funds_advanced] )
 )
 
 
 // -----------------------------------------------------------------------------
-// SECTION 7 - price index
+// House prices
 //
-// An index is NON-ADDITIVE across geography and time. Never SUM it; and never
-// average across places either, because the index weights differ by market.
+// An index is not a quantity - you can never add index values together, and
+// averaging across cities is dodgy too because each city is weighted
+// differently. Only ever compare an index to itself over time.
 // -----------------------------------------------------------------------------
 
-New Housing Price Index =
+Price Index =
 AVERAGE ( fact_price_index[index_value] )
 
-NHPI YoY % =
-VAR Prior = CALCULATE ( [New Housing Price Index], DATEADD ( dim_date[date], -12, MONTH ) )
-RETURN DIVIDE ( [New Housing Price Index] - Prior, Prior )
+Price Index Change % =
+VAR LastYear = CALCULATE ( [Price Index], DATEADD ( dim_date[date], -12, MONTH ) )
+RETURN DIVIDE ( [Price Index] - LastYear, LastYear )
 
 
 // -----------------------------------------------------------------------------
-// SECTION 8 - data quality, surfaced in the report
+// Data quality, shown in the report itself
 //
-// Publishing the quality record next to the numbers is the point. A user who
-// can see that 25,000+ comparisons ran against independently published control
-// totals will trust the figures far more than one who is simply asked to.
+// Putting the checks on a page of the dashboard is what earns trust. Someone
+// who can see that 600,000+ comparisons were run against the published numbers
+// will believe the report far more than someone just told to.
 // -----------------------------------------------------------------------------
 
-Reconciliation Comparisons =
-SUM ( vw_reconciliation_summary[comparisons] )
+Checks Run =
+COUNTROWS ( check_results )
 
-Reconciliation Breaches =
-SUM ( vw_reconciliation_summary[breaches] )
+Checks Passed =
+CALCULATE ( COUNTROWS ( check_results ), check_results[passed] = TRUE () )
 
-Reconciliation Pass Rate =
-DIVIDE (
-    SUM ( vw_reconciliation_summary[passed] ),
-    SUM ( vw_reconciliation_summary[comparisons] )
-)
-
-Max Variance =
-MAX ( vw_reconciliation_summary[max_variance] )
+Check Pass Rate =
+DIVIDE ( [Checks Passed], [Checks Run] )
 
 Data Quality Status =
-VAR Breaches = [Reconciliation Breaches]
+VAR Failed = [Checks Run] - [Checks Passed]
 RETURN
-    SWITCH (
-        TRUE (),
-        ISBLANK ( Breaches ), "No reconciliation run recorded",
-        Breaches = 0, "PASS — all figures within tolerance",
-        "REVIEW — " & FORMAT ( Breaches, "#,0" ) & " comparisons outside tolerance"
+    IF (
+        Failed = 0,
+        "All numbers match the published figures",
+        FORMAT ( Failed, "#,0" ) & " numbers need review"
     )
 
-Last Refresh =
-"Data as at " & FORMAT ( MAX ( dim_date[date] ), "MMMM yyyy" )
-
-// Provenance, readable from inside the report. A user asking "where did this
-// number come from?" should not have to open a document.
-Source Attribution =
-CONCATENATEX (
-    VALUES ( dim_source[publisher] ),
-    dim_source[publisher],
-    ", ",
-    dim_source[publisher],
-    ASC
-)
+Data Through =
+"Data up to " & FORMAT ( MAX ( dim_date[date] ), "MMMM yyyy" )
