@@ -1,0 +1,14 @@
+# Core pipeline
+duckdb>=1.1          # local analytical warehouse; runs the star schema offline
+pandas>=2.0          # dimension shaping and reconciliation arithmetic
+pyarrow>=15.0        # Parquet export that Power BI reads natively
+requests>=2.31       # StatCan Web Data Service + CBA downloads
+PyYAML>=6.0          # config/sources.yml
+pdfplumber>=0.11     # CBA arrears PDF - the only source without a data API
+
+# Tests
+pytest>=8.0
+
+# Optional: Azure SQL deployment (sql/azure/). Not needed for the local build.
+# pyodbc>=5.0
+# sqlalchemy>=2.0

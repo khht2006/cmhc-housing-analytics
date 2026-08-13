@@ -1,0 +1,32 @@
+# Raw source downloads and the built warehouse are reproducible from code +
+# config, so they stay out of version control. `python -m pipeline.refresh`
+# regenerates everything in about 40 seconds.
+data/raw/
+data/staging/
+data/warehouse/
+data/exports/
+logs/
+
+# The extract manifest is the exception worth discussing: it records which
+# publisher vintage produced a given build (URL + SHA-256 + timestamp). It is
+# regenerated on every run and would churn constantly, so it is ignored here;
+# ops.source_vintage inside the warehouse is the durable record.
+data/raw/_manifest.json
+
+# Power BI
+*.pbix
+*.pbit
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

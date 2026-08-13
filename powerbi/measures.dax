@@ -1,0 +1,410 @@
+// =============================================================================
+// Canadian Mortgage & Housing Analytics - DAX measure library
+//
+// Load order in Power BI: import the star (data/exports/dimensions + facts),
+// mark dim_date as the date table on [date], build the relationships listed in
+// powerbi/model-setup.md, then paste these measures into a "_Measures" table.
+//
+// Four rules run through everything here, and each exists because breaking it
+// produces a number that looks reasonable and is wrong:
+//
+//   1. RATES ARE RATIOS OF SUMS, NEVER AVERAGES OF RATES.
+//      AVERAGE(arrears_rate_pct) across regions weights Prince Edward Island
+//      equally with Ontario. The correct national rate is
+//      SUM(arrears) / SUM(total_mortgages).
+//
+//   2. COVERAGE IS PART OF THE GRAIN.
+//      fact_housing_activity holds four overlapping statistical universes.
+//      Any measure that sums units without pinning coverage silently
+//      quadruple-counts, so the base measures refuse to return a number when
+//      more than one coverage is in filter context.
+//
+//   3. PUBLISHER SUBTOTALS ARE EXCLUDED BY DEFAULT.
+//      dim_geography.is_aggregate and dim_credit_product.is_leaf mark rows that
+//      sit beside their own children. Every additive measure filters them.
+//
+//   4. STOCKS ARE SEMI-ADDITIVE.
+//      Units under construction is a level, not a flow. Summing it across
+//      months counts the same dwelling repeatedly; the correct aggregation over
+//      time is the last non-blank period.
+// =============================================================================
+
+
+// -----------------------------------------------------------------------------
+// SECTION 0 - guards
+// -----------------------------------------------------------------------------
+
+// Returns TRUE when exactly one coverage is in context. Every housing volume
+// measure gates on this. Better to show a clear instruction than a wrong total.
+Coverage Is Single =
+VAR CoverageCount = DISTINCTCOUNT ( dim_coverage[coverage_name] )
+RETURN CoverageCount = 1
+
+Coverage Warning =
+IF (
+    NOT [Coverage Is Single],
+    "Select a single coverage — the four universes overlap and cannot be summed together."
+)
+
+// Default coverage, used by measures that need to pick one deterministically.
+Default Coverage =
+CALCULATE (
+    SELECTEDVALUE ( dim_coverage[coverage_name] ),
+    dim_coverage[is_default] = TRUE (),
+    REMOVEFILTERS ( dim_coverage )
+)
+
+
+// -----------------------------------------------------------------------------
+// SECTION 1 - housing activity, base measures
+// -----------------------------------------------------------------------------
+
+Housing Starts =
+IF (
+    [Coverage Is Single],
+    CALCULATE (
+        SUM ( fact_housing_activity[units] ),
+        dim_construction_stage[stage_short] = "Starts",
+        dim_geography[is_aggregate] = FALSE ()
+    )
+)
+
+Housing Completions =
+IF (
+    [Coverage Is Single],
+    CALCULATE (
+        SUM ( fact_housing_activity[units] ),
+        dim_construction_stage[stage_short] = "Completions",
+        dim_geography[is_aggregate] = FALSE ()
+    )
+)
+
+// SEMI-ADDITIVE. Units under construction is a stock: the same dwelling is
+// counted in every month it remains unfinished, so summing across months is
+// meaningless. Over a date range we take the last month that has data.
+Units Under Construction =
+IF (
+    [Coverage Is Single],
+    CALCULATE (
+        SUM ( fact_housing_activity[units] ),
+        dim_construction_stage[stage_short] = "Under construction",
+        dim_geography[is_aggregate] = FALSE (),
+        LASTNONBLANK (
+            dim_date[date],
+            CALCULATE (
+                SUM ( fact_housing_activity[units] ),
+                dim_construction_stage[stage_short] = "Under construction"
+            )
+        )
+    )
+)
+
+// National totals regardless of the geography slicer - the denominator for
+// contribution analysis.
+Housing Starts (National) =
+CALCULATE ( [Housing Starts], REMOVEFILTERS ( dim_geography ) )
+
+
+// -----------------------------------------------------------------------------
+// SECTION 2 - time intelligence
+//
+// Housing data is violently seasonal (starts roughly double from January to
+// June in a normal year), so month-over-month on raw counts mostly measures the
+// weather. Year-over-year on the same calendar month is the correct control,
+// and the 12-month rolling total is the correct trend line.
+// -----------------------------------------------------------------------------
+
+Housing Starts LY =
+CALCULATE ( [Housing Starts], DATEADD ( dim_date[date], -12, MONTH ) )
+
+Housing Starts YoY =
+VAR Current = [Housing Starts]
+VAR Prior = [Housing Starts LY]
+RETURN IF ( NOT ISBLANK ( Current ) && NOT ISBLANK ( Prior ), Current - Prior )
+
+Housing Starts YoY % =
+VAR Prior = [Housing Starts LY]
+RETURN DIVIDE ( [Housing Starts YoY], Prior )   // DIVIDE, not "/", handles Prior = 0
+
+Housing Starts 12M =
+CALCULATE (
+    [Housing Starts],
+    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )
+)
+
+Housing Completions 12M =
+CALCULATE (
+    [Housing Completions],
+    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )
+)
+
+
+// -----------------------------------------------------------------------------
+// SECTION 3 - the bottleneck measures
+//
+// NOTE ON DATA AVAILABILITY: CMHC stopped publishing completions and
+// under-construction at province level after 2022-12. These measures only
+// return values under the "Census metropolitan areas" coverage for recent
+// periods. See docs/data-availability.md.
+// -----------------------------------------------------------------------------
+
+// Below 1 means the pipeline is filling faster than it empties.
+Completion Ratio 12M =
+DIVIDE ( [Housing Completions 12M], [Housing Starts 12M] )
+
+// The headline bottleneck metric: at the current completion rate, how many
+// months to clear what has already been started?
+Backlog Months =
+VAR MonthlyCompletionRate = DIVIDE ( [Housing Completions 12M], 12 )
+RETURN DIVIDE ( [Units Under Construction], MonthlyCompletionRate )
+
+Backlog Months LY =
+CALCULATE ( [Backlog Months], DATEADD ( dim_date[date], -12, MONTH ) )
+
+Backlog Months YoY =
+VAR Current = [Backlog Months]
+VAR Prior = [Backlog Months LY]
+RETURN IF ( NOT ISBLANK ( Current ) && NOT ISBLANK ( Prior ), Current - Prior )
+
+// Built-but-unsold pressure.
+Absorptions 12M =
+CALCULATE (
+    SUM ( fact_market_absorption[absorptions] ),
+    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH ),
+    dim_geography[is_aggregate] = FALSE ()
+)
+
+Unabsorbed Inventory =
+CALCULATE (
+    SUM ( fact_market_absorption[unabsorbed_inventory] ),
+    dim_geography[is_aggregate] = FALSE (),
+    LASTNONBLANK (
+        dim_date[date],
+        CALCULATE ( SUM ( fact_market_absorption[unabsorbed_inventory] ) )
+    )
+)
+
+Months of Inventory =
+DIVIDE ( [Unabsorbed Inventory], DIVIDE ( [Absorptions 12M], 12 ) )
+
+
+// -----------------------------------------------------------------------------
+// SECTION 4 - delinquency
+//
+// RULE 1 IN ACTION. The national arrears rate is NOT the average of the eight
+// regional rates. Ontario carries ~44% of Canadian mortgages and PEI a fraction
+// of a percent; averaging their rates equally overstates the national figure
+// by a wide margin. Always ratio-of-sums.
+// -----------------------------------------------------------------------------
+
+Mortgages Outstanding =
+SUM ( fact_mortgage_arrears[total_mortgages] )
+
+Mortgages In Arrears =
+SUM ( fact_mortgage_arrears[mortgages_in_arrears] )
+
+Arrears Rate =
+DIVIDE ( [Mortgages In Arrears], [Mortgages Outstanding] )
+
+// The rate exactly as CBA printed it. Kept alongside the derived measure so a
+// user can see that the two agree - and so the reconciliation story is visible
+// in the report, not just in the pipeline logs.
+Arrears Rate (Published) =
+AVERAGE ( fact_mortgage_arrears[arrears_rate_pct] ) / 100
+
+Arrears Rate LY =
+CALCULATE ( [Arrears Rate], DATEADD ( dim_date[date], -12, MONTH ) )
+
+// Expressed in PERCENTAGE POINTS, not percent change. A move from 0.20% to
+// 0.30% is +0.10pp; calling it "+50%" is technically true and useless.
+Arrears Rate YoY (pp) =
+VAR Current = [Arrears Rate]
+VAR Prior = [Arrears Rate LY]
+RETURN IF ( NOT ISBLANK ( Current ) && NOT ISBLANK ( Prior ), ( Current - Prior ) * 100 )
+
+// Smoothed: monthly arrears counts are small enough to be jumpy.
+Arrears Rate 3M Avg =
+AVERAGEX (
+    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -3, MONTH ),
+    [Arrears Rate]
+)
+
+// The renewal-shock lens: the 5-year rate roughly when a borrower renewing now
+// had their payment set.
+Conventional 5Y Rate =
+AVERAGE ( fact_rate_environment[conventional_5yr_rate] )
+
+Conventional 5Y Rate 18M Ago =
+CALCULATE ( [Conventional 5Y Rate], DATEADD ( dim_date[date], -18, MONTH ) )
+
+// Flags where a region's arrears count is suppressed for confidentiality, so a
+// blank reads as "not published" rather than "zero arrears".
+Arrears Suppressed Flag =
+IF (
+    CALCULATE ( MAX ( fact_mortgage_arrears[is_suppressed] ) ) = TRUE (),
+    "Suppressed by publisher"
+)
+
+
+// -----------------------------------------------------------------------------
+// SECTION 5 - "what changed?" contribution analysis
+//
+// Ranking places by growth RATE always surfaces the smallest ones: a 100% rise
+// in Charlottetown is 29 dwellings. Contribution-to-change answers the question
+// an executive is actually asking - who moved the national number?
+// -----------------------------------------------------------------------------
+
+Contribution to National Change =
+VAR ThisGeoChange = [Housing Starts YoY]
+VAR TotalAbsoluteMovement =
+    SUMX (
+        CALCULATETABLE (
+            VALUES ( dim_geography[geo_name] ),
+            REMOVEFILTERS ( dim_geography ),
+            dim_geography[is_aggregate] = FALSE (),
+            dim_geography[geo_level] = SELECTEDVALUE ( dim_geography[geo_level] )
+        ),
+        ABS ( [Housing Starts YoY] )
+    )
+RETURN DIVIDE ( ThisGeoChange, TotalAbsoluteMovement )
+
+// Rank by absolute movement so a large decline ranks as highly as a large rise.
+Movement Rank =
+RANKX (
+    CALCULATETABLE (
+        VALUES ( dim_geography[geo_name] ),
+        REMOVEFILTERS ( dim_geography ),
+        dim_geography[is_aggregate] = FALSE (),
+        dim_geography[geo_level] = SELECTEDVALUE ( dim_geography[geo_level] )
+    ),
+    ABS ( [Housing Starts YoY] ),
+    ,
+    DESC,
+    DENSE
+)
+
+// Narrative label for a card visual - the dashboard should say what changed,
+// not merely plot it.
+What Changed Headline =
+VAR Change = [Housing Starts YoY]
+VAR Pct = [Housing Starts YoY %]
+VAR Direction = IF ( Change >= 0, "up", "down" )
+VAR Place = SELECTEDVALUE ( dim_geography[geo_name], "Canada" )
+RETURN
+    IF (
+        ISBLANK ( Change ),
+        "No comparable period",
+        Place & ": starts " & Direction & " "
+            & FORMAT ( ABS ( Change ), "#,0" ) & " units ("
+            & FORMAT ( ABS ( Pct ), "0.0%" ) & ") vs the same month last year"
+    )
+
+
+// -----------------------------------------------------------------------------
+// SECTION 6 - mortgage credit
+//
+// dim_credit_product[is_leaf] = FALSE marks the publisher's own subtotals,
+// which sit in the table beside their children. Summing without this filter
+// double-counts roughly 30 of 102 members.
+// -----------------------------------------------------------------------------
+
+Funds Advanced =
+CALCULATE (
+    SUM ( fact_mortgage_originations[funds_advanced] ),
+    dim_credit_product[is_leaf] = TRUE ()
+)
+
+Funds Advanced 12M =
+CALCULATE (
+    [Funds Advanced],
+    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )
+)
+
+Funds Advanced YoY % =
+VAR Prior = CALCULATE ( [Funds Advanced], DATEADD ( dim_date[date], -12, MONTH ) )
+RETURN DIVIDE ( [Funds Advanced] - Prior, Prior )
+
+// Stock, not flow: take the period-end level.
+Mortgage Balance Outstanding =
+CALCULATE (
+    SUM ( fact_mortgage_originations[outstanding_balance] ),
+    dim_credit_product[is_leaf] = TRUE (),
+    LASTNONBLANK (
+        dim_date[date],
+        CALCULATE ( SUM ( fact_mortgage_originations[outstanding_balance] ) )
+    )
+)
+
+// A weighted average, never a plain average of rates. Weighting by funds
+// advanced is what makes "effective rate on new lending" mean anything.
+Effective Rate (Weighted) =
+DIVIDE (
+    SUMX (
+        fact_mortgage_originations,
+        fact_mortgage_originations[effective_rate] * fact_mortgage_originations[funds_advanced]
+    ),
+    SUM ( fact_mortgage_originations[funds_advanced] )
+)
+
+
+// -----------------------------------------------------------------------------
+// SECTION 7 - price index
+//
+// An index is NON-ADDITIVE across geography and time. Never SUM it; and never
+// average across places either, because the index weights differ by market.
+// -----------------------------------------------------------------------------
+
+New Housing Price Index =
+AVERAGE ( fact_price_index[index_value] )
+
+NHPI YoY % =
+VAR Prior = CALCULATE ( [New Housing Price Index], DATEADD ( dim_date[date], -12, MONTH ) )
+RETURN DIVIDE ( [New Housing Price Index] - Prior, Prior )
+
+
+// -----------------------------------------------------------------------------
+// SECTION 8 - data quality, surfaced in the report
+//
+// Publishing the quality record next to the numbers is the point. A user who
+// can see that 25,000+ comparisons ran against independently published control
+// totals will trust the figures far more than one who is simply asked to.
+// -----------------------------------------------------------------------------
+
+Reconciliation Comparisons =
+SUM ( vw_reconciliation_summary[comparisons] )
+
+Reconciliation Breaches =
+SUM ( vw_reconciliation_summary[breaches] )
+
+Reconciliation Pass Rate =
+DIVIDE (
+    SUM ( vw_reconciliation_summary[passed] ),
+    SUM ( vw_reconciliation_summary[comparisons] )
+)
+
+Max Variance =
+MAX ( vw_reconciliation_summary[max_variance] )
+
+Data Quality Status =
+VAR Breaches = [Reconciliation Breaches]
+RETURN
+    SWITCH (
+        TRUE (),
+        ISBLANK ( Breaches ), "No reconciliation run recorded",
+        Breaches = 0, "PASS — all figures within tolerance",
+        "REVIEW — " & FORMAT ( Breaches, "#,0" ) & " comparisons outside tolerance"
+    )
+
+Last Refresh =
+"Data as at " & FORMAT ( MAX ( dim_date[date] ), "MMMM yyyy" )
+
+// Provenance, readable from inside the report. A user asking "where did this
+// number come from?" should not have to open a document.
+Source Attribution =
+CONCATENATEX (
+    VALUES ( dim_source[publisher] ),
+    dim_source[publisher],
+    ", ",
+    dim_source[publisher],
+    ASC
+)
