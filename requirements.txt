@@ -1,14 +1,9 @@
-# Core pipeline
-duckdb>=1.1          # local analytical warehouse; runs the star schema offline
-pandas>=2.0          # dimension shaping and reconciliation arithmetic
-pyarrow>=15.0        # Parquet export that Power BI reads natively
-requests>=2.31       # StatCan Web Data Service + CBA downloads
-PyYAML>=6.0          # config/sources.yml
-pdfplumber>=0.11     # CBA arrears PDF - the only source without a data API
+# Install these with:  pip install -r requirements.txt
 
-# Tests
-pytest>=8.0
+duckdb>=1.1        # the database - lives in one file, no server to set up
+pandas>=2.0        # building the dimension tables, and the number checks
+pyarrow>=15.0      # writing Parquet files, which is what Power BI reads
+requests>=2.31     # downloading from Statistics Canada and the CBA
+pdfplumber>=0.11   # reading the arrears numbers out of the CBA's PDF
 
-# Optional: Azure SQL deployment (sql/azure/). Not needed for the local build.
-# pyodbc>=5.0
-# sqlalchemy>=2.0
+pytest>=8.0        # running the tests
