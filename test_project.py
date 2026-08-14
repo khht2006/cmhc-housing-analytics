@@ -209,6 +209,35 @@ def test_hidden_arrears_are_null_not_zero(db):
     assert wrong == 0
 
 
+def test_lending_and_debt_are_kept_apart(db):
+    """
+    "Funds advanced" (new lending this month) and "outstanding balances" (total
+    debt owed) are both dollar amounts in the same source column, and they are
+    wildly different sizes - a few billion versus over a trillion. An earlier
+    version put them in the same column, which made new lending look hundreds of
+    times bigger than it is.
+
+    Outstanding debt should dwarf monthly lending. If that flips, they got mixed
+    together again.
+    """
+    lending, debt = db.sql("""
+        SELECT SUM(funds_advanced_millions), SUM(outstanding_balance_millions)
+        FROM fact_mortgage_originations f
+        JOIN dim_date d ON d.date_key = f.date_key
+        JOIN dim_credit_product p ON p.credit_product_key = f.credit_product_key
+        WHERE d.year_month = (SELECT max(year_month) FROM dim_date d2
+                              JOIN fact_mortgage_originations f2 ON f2.date_key = d2.date_key)
+          AND p.is_total = FALSE
+    """).fetchone()
+
+    assert lending is not None and lending > 0, "no new lending recorded"
+    assert debt is not None and debt > 0, "no outstanding balances recorded"
+    assert debt > lending * 10, (
+        f"outstanding debt ({debt:,.0f}M) should be far larger than one month's "
+        f"lending ({lending:,.0f}M) - the two columns look mixed up"
+    )
+
+
 def test_we_have_at_least_ten_years_of_data(db):
     years = count(db, """
         SELECT max(d.year) - min(d.year)

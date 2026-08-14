@@ -202,6 +202,43 @@ def check_house_types_add_up(db):
     """).df()
 
 
+def check_mortgage_lending_adds_up(db):
+    """The detailed mortgage lending rows must add up to the published totals.
+
+    The Bank of Canada publishes new residential mortgage lending broken down by
+    fixed/variable, insured/uninsured and term length, AND publishes a "Total,
+    funds advanced, residential mortgages, insured/uninsured" row. So the pieces
+    must reproduce the total.
+
+    This is the check that catches product_family being wrong. If business loans
+    leaked into the mortgage family, the pieces would massively overshoot.
+    """
+    return db.sql("""
+        WITH pieces AS (
+            SELECT f.date_key, SUM(f.funds_advanced_millions) AS our_total
+            FROM fact_mortgage_originations f
+            JOIN dim_credit_product p ON p.credit_product_key = f.credit_product_key
+            WHERE p.product_family = 'Residential mortgage' AND p.is_total = FALSE
+            GROUP BY 1
+        ),
+        published AS (
+            SELECT f.date_key, SUM(f.funds_advanced_millions) AS published_total
+            FROM fact_mortgage_originations f
+            JOIN dim_credit_product p ON p.credit_product_key = f.credit_product_key
+            WHERE p.product_family = 'Residential mortgage' AND p.is_total = TRUE
+            GROUP BY 1
+        )
+        SELECT 'mortgage lending adds up to total' AS check_name,
+               d.year_month                        AS detail,
+               pieces.our_total                    AS our_value,
+               published.published_total           AS published_value
+        FROM pieces
+        JOIN published ON published.date_key = pieces.date_key
+        JOIN dim_date d ON d.date_key = pieces.date_key
+        WHERE published.published_total > 0
+    """).df()
+
+
 def check_nothing_got_lost(db):
     """No fact row should have ended up pointing at an "Unknown" dimension.
 
@@ -229,11 +266,12 @@ def check_nothing_got_lost(db):
 # just rounding. When a number is already a small percentage, comparing
 # percentage-of-a-percentage is meaningless.
 CHECKS = [
-    (check_arrears_add_up,     "percent"),
-    (check_arrears_rate,       "rate"),
-    (check_provinces_add_up,   "percent"),
-    (check_house_types_add_up, "percent"),
-    (check_nothing_got_lost,   "percent"),
+    (check_arrears_add_up,             "percent"),
+    (check_arrears_rate,               "rate"),
+    (check_provinces_add_up,           "percent"),
+    (check_house_types_add_up,         "percent"),
+    (check_mortgage_lending_adds_up,   "percent"),
+    (check_nothing_got_lost,           "percent"),
 ]
 
 

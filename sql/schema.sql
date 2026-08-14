@@ -96,6 +96,10 @@ CREATE TABLE IF NOT EXISTS dim_construction_stage (
 CREATE TABLE IF NOT EXISTS dim_credit_product (
     credit_product_key INTEGER PRIMARY KEY,
     product_name       VARCHAR NOT NULL,
+    -- What kind of borrowing this is. The Bank of Canada puts home mortgages,
+    -- business loans and credit cards in ONE table, so without this column you
+    -- can't tell them apart and would add them all together.
+    product_family     VARCHAR,
     rate_type          VARCHAR,   -- Fixed / Variable
     insurance_status   VARCHAR,   -- Insured / Uninsured
     is_total           BOOLEAN NOT NULL
@@ -158,12 +162,27 @@ CREATE TABLE IF NOT EXISTS fact_mortgage_arrears (
     PRIMARY KEY (date_key, arrears_region_key)
 );
 
--- New mortgage money lent out each month, and the interest rate on it.
+-- Mortgage lending from the Bank of Canada.
+--
+-- Two very different money columns here, and mixing them up is an easy mistake:
+--
+--   funds_advanced_millions      NEW money lent this month. A flow - adding up
+--                                12 months gives you the year's lending.
+--
+--   outstanding_balance_millions TOTAL money still owed. A snapshot - adding up
+--                                12 months is meaningless, because it's the same
+--                                debt counted twelve times.
+--
+-- Both are in MILLIONS of dollars, because that's how the Bank of Canada
+-- publishes them. The column names say so rather than leaving you to guess -
+-- a column called "funds_advanced" holding 1250406 looks like $1.25 million
+-- when it's actually $1.25 trillion.
 CREATE TABLE IF NOT EXISTS fact_mortgage_originations (
-    date_key           INTEGER NOT NULL,
-    credit_product_key INTEGER NOT NULL,
-    funds_advanced     DECIMAL(20, 2),   -- dollars lent this month
-    interest_rate      DECIMAL(9, 4),    -- never add these up, only average
+    date_key                     INTEGER NOT NULL,
+    credit_product_key           INTEGER NOT NULL,
+    funds_advanced_millions      DECIMAL(20, 2),
+    outstanding_balance_millions DECIMAL(20, 2),
+    interest_rate                DECIMAL(9, 4),   -- never add these up, only average
     PRIMARY KEY (date_key, credit_product_key)
 );
 

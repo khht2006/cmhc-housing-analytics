@@ -298,11 +298,12 @@
             "name": "New Mortgage Lending",
             "expression": [
               "CALCULATE (",
-              "    SUM ( fact_mortgage_originations[funds_advanced] ),",
+              "    SUM ( fact_mortgage_originations[funds_advanced_millions] ),",
+              "    dim_credit_product[product_family] = \"Residential mortgage\",",
               "    dim_credit_product[is_total] = FALSE ()",
-              ")"
+              ") * 1000000"
             ],
-            "formatString": "#,0"
+            "formatString": "$#,0,,\" M\""
           },
           {
             "name": "New Mortgage Lending 12 Months",
@@ -312,20 +313,51 @@
               "    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )",
               ")"
             ],
-            "formatString": "#,0"
+            "formatString": "$#,0,,\" M\""
+          },
+          {
+            "name": "Mortgage Debt Outstanding",
+            "expression": [
+              "CALCULATE (",
+              "    SUM ( fact_mortgage_originations[outstanding_balance_millions] ),",
+              "    dim_credit_product[product_family] = \"Residential mortgage\",",
+              "    dim_credit_product[is_total] = FALSE (),",
+              "    LASTDATE ( dim_date[date] )",
+              ") * 1000000"
+            ],
+            "formatString": "$#,0,,,\" B\""
           },
           {
             "name": "Average Rate On New Lending",
             "expression": [
-              "DIVIDE (",
-              "    SUMX (",
+              "VAR MortgageRows =",
+              "    CALCULATETABLE (",
               "        fact_mortgage_originations,",
-              "        fact_mortgage_originations[interest_rate] * fact_mortgage_originations[funds_advanced]",
-              "    ),",
-              "    SUM ( fact_mortgage_originations[funds_advanced] )",
-              ")"
+              "        dim_credit_product[product_family] = \"Residential mortgage\",",
+              "        dim_credit_product[is_total] = FALSE ()",
+              "    )",
+              "RETURN",
+              "    DIVIDE (",
+              "        SUMX (",
+              "            MortgageRows,",
+              "            fact_mortgage_originations[interest_rate]",
+              "                * fact_mortgage_originations[funds_advanced_millions]",
+              "        ),",
+              "        SUMX ( MortgageRows, fact_mortgage_originations[funds_advanced_millions] )",
+              "    )"
             ],
             "formatString": "0.00"
+          },
+          {
+            "name": "Variable Rate Share",
+            "expression": [
+              "DIVIDE (",
+              "    CALCULATE ( [New Mortgage Lending], dim_credit_product[rate_type] = \"Variable\" ),",
+              "    CALCULATE ( [New Mortgage Lending],",
+              "                dim_credit_product[rate_type] IN { \"Variable\", \"Fixed\" } )",
+              ")"
+            ],
+            "formatString": "0.0%"
           },
           {
             "name": "Price Index",
@@ -964,6 +996,18 @@
             ]
           },
           {
+            "name": "product_family",
+            "dataType": "string",
+            "sourceColumn": "product_family",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
             "name": "rate_type",
             "dataType": "string",
             "sourceColumn": "rate_type",
@@ -1436,9 +1480,21 @@
             "isHidden": true
           },
           {
-            "name": "funds_advanced",
+            "name": "funds_advanced_millions",
             "dataType": "decimal",
-            "sourceColumn": "funds_advanced",
+            "sourceColumn": "funds_advanced_millions",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "outstanding_balance_millions",
+            "dataType": "decimal",
+            "sourceColumn": "outstanding_balance_millions",
             "summarizeBy": "none",
             "annotations": [
               {

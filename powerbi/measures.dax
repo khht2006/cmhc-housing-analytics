@@ -248,13 +248,26 @@ RETURN
 // Mortgage lending
 // -----------------------------------------------------------------------------
 
-// The is_total filter is rule 3. Rows starting with "Total," are subtotals of
-// the rows below them, so without this every figure roughly doubles.
+// NEW money lent this month on homes.
+//
+// TWO filters here, and both are needed:
+//
+//   product_family = "Residential mortgage"
+//       The Bank of Canada table also contains business loans, credit cards,
+//       and a second copy of variable-rate mortgages sliced a different way.
+//       Without this filter you'd be adding all of that to your housing number.
+//
+//   is_total = FALSE
+//       Rows starting with "Total," are subtotals of the rows beneath them.
+//
+// The source publishes these in millions, so we multiply up to real dollars
+// and let Power BI handle the formatting.
 New Mortgage Lending =
 CALCULATE (
-    SUM ( fact_mortgage_originations[funds_advanced] ),
+    SUM ( fact_mortgage_originations[funds_advanced_millions] ),
+    dim_credit_product[product_family] = "Residential mortgage",
     dim_credit_product[is_total] = FALSE ()
-)
+) * 1000000
 
 New Mortgage Lending 12 Months =
 CALCULATE (
@@ -262,16 +275,44 @@ CALCULATE (
     DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )
 )
 
+// TOTAL money still owed. This is rule 3 from the top of the file: it's a
+// snapshot, not a monthly total, so we take the latest month rather than
+// adding months together.
+Mortgage Debt Outstanding =
+CALCULATE (
+    SUM ( fact_mortgage_originations[outstanding_balance_millions] ),
+    dim_credit_product[product_family] = "Residential mortgage",
+    dim_credit_product[is_total] = FALSE (),
+    LASTDATE ( dim_date[date] )
+) * 1000000
+
 // Rule 1 again. Averaging interest rates treats a $1 million mortgage and a
 // $100 million one as equally important. Weighting by how much was actually
 // lent is what makes this mean anything.
 Average Rate On New Lending =
-DIVIDE (
-    SUMX (
+VAR MortgageRows =
+    CALCULATETABLE (
         fact_mortgage_originations,
-        fact_mortgage_originations[interest_rate] * fact_mortgage_originations[funds_advanced]
-    ),
-    SUM ( fact_mortgage_originations[funds_advanced] )
+        dim_credit_product[product_family] = "Residential mortgage",
+        dim_credit_product[is_total] = FALSE ()
+    )
+RETURN
+    DIVIDE (
+        SUMX (
+            MortgageRows,
+            fact_mortgage_originations[interest_rate]
+                * fact_mortgage_originations[funds_advanced_millions]
+        ),
+        SUMX ( MortgageRows, fact_mortgage_originations[funds_advanced_millions] )
+    )
+
+// What share of new lending is variable rate? Jumps around a lot with where
+// people think rates are heading, so it's a decent read on borrower sentiment.
+Variable Rate Share =
+DIVIDE (
+    CALCULATE ( [New Mortgage Lending], dim_credit_product[rate_type] = "Variable" ),
+    CALCULATE ( [New Mortgage Lending],
+                dim_credit_product[rate_type] IN { "Variable", "Fixed" } )
 )
 
 

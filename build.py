@@ -269,6 +269,7 @@ def build_dim_credit_product(db):
         lowered = name.lower()
         rows.append({
             "product_name": name,
+            "product_family": credit_family(lowered),
             "rate_type": ("Fixed" if "fixed rate" in lowered
                           else "Variable" if "variable rate" in lowered
                           else "All"),
@@ -283,10 +284,49 @@ def build_dim_credit_product(db):
 
     unknown_row = pd.DataFrame([{
         "credit_product_key": UNKNOWN, "product_name": "Unknown",
-        "rate_type": None, "insurance_status": None, "is_total": False,
+        "product_family": None, "rate_type": None,
+        "insurance_status": None, "is_total": False,
     }])
     insert_dataframe(db, "dim_credit_product",
                      pd.concat([unknown_row, table], ignore_index=True))
+
+
+def credit_family(lowered_name):
+    """
+    Sort a Bank of Canada product name into a family.
+
+    Two traps this exists to handle:
+
+    1. The table isn't just mortgages. Business loans and credit cards are in
+       there too, so adding everything up gives a number that has nothing to do
+       with housing.
+
+    2. Variable rate mortgages appear TWICE, split two different ways - once as
+       insured/uninsured under residential mortgages, and again as
+       open/closed/convertible. Both breakdowns describe the same money, so
+       counting both double-counts. We park the second one in its own family so
+       it can't get added in by accident.
+
+    Order matters here - the checks run most specific first.
+    """
+    if "non-residential mortgage" in lowered_name:
+        return "Commercial mortgage"
+
+    if "residential mortgage" in lowered_name:
+        return "Residential mortgage"
+
+    # The alternative variable-rate breakdown - same money as above, sliced a
+    # different way. Deliberately kept out of "Residential mortgage".
+    if "variable rate mortgage" in lowered_name:
+        return "Variable rate mortgage (alternative split)"
+
+    if "business loan" in lowered_name:
+        return "Business loan"
+
+    if "consumer credit" in lowered_name or "non-mortgage loan" in lowered_name:
+        return "Consumer credit"
+
+    return "Other"
 
 
 # =============================================================================
@@ -413,10 +453,19 @@ def build_fact_mortgage_arrears(db):
 
 def build_fact_mortgage_originations(db):
     """
-    The Bank of Canada mixes dollars and interest rates in one VALUE column,
-    with a separate "Unit of measure" column saying which is which. We split
-    them into two proper columns, because they behave completely differently:
-    you can add dollars together, but adding interest rates is meaningless.
+    The Bank of Canada packs three different things into one VALUE column.
+
+    A separate "Unit of measure" column says whether a row is dollars or an
+    interest rate. And within the dollar rows, the product name says whether
+    it's "funds advanced" (new lending this month) or "outstanding balances"
+    (total debt still owed).
+
+    Those two are NOT the same thing and must never be added together:
+    new lending in May 2026 was a few billion, while outstanding balances were
+    about 1.25 million million - that is, $1.25 trillion. Summing them gives a
+    number that is wrong by a factor of hundreds.
+
+    So we pull them apart into three properly-named columns.
     """
     db.execute("DELETE FROM fact_mortgage_originations")
     db.execute(f"""
@@ -424,10 +473,21 @@ def build_fact_mortgage_originations(db):
         SELECT
             {DATE_KEY},
             COALESCE(product.credit_product_key, {UNKNOWN}),
+
+            -- New money lent this month (a flow).
             SUM(CASE WHEN raw."Unit of measure" = 'Dollars'
+                      AND lower(raw."Components") LIKE '%funds advanced%'
                      THEN TRY_CAST(raw.VALUE AS DECIMAL(20, 2)) END),
+
+            -- Total money still owed (a snapshot).
+            SUM(CASE WHEN raw."Unit of measure" = 'Dollars'
+                      AND lower(raw."Components") LIKE '%outstanding%'
+                     THEN TRY_CAST(raw.VALUE AS DECIMAL(20, 2)) END),
+
+            -- Rates get averaged, never summed.
             AVG(CASE WHEN raw."Unit of measure" = 'Interest rate'
                      THEN TRY_CAST(raw.VALUE AS DECIMAL(9, 4)) END)
+
         FROM {raw_csv('originations')} AS raw
         LEFT JOIN dim_credit_product AS product ON product.product_name = raw."Components"
         JOIN dim_date AS d ON d.date_key = {DATE_KEY}
@@ -480,6 +540,24 @@ def main():
     WAREHOUSE_FILE.parent.mkdir(parents=True, exist_ok=True)
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     db = duckdb.connect(str(WAREHOUSE_FILE))
+
+    # Drop everything before recreating it.
+    #
+    # This matters more than it looks. "CREATE TABLE IF NOT EXISTS" does nothing
+    # if the table already exists - including when you've since ADDED A COLUMN to
+    # sql/schema.sql. Without this you'd edit the schema, re-run, see no error,
+    # and quietly keep using the old table shape.
+    #
+    # We rebuild from the raw files every time anyway, so there's nothing to lose.
+    for (view,) in db.sql(
+        "SELECT table_name FROM information_schema.tables WHERE table_type = 'VIEW'"
+    ).fetchall():
+        db.execute(f'DROP VIEW IF EXISTS "{view}" CASCADE')
+
+    for (table,) in db.sql(
+        "SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE'"
+    ).fetchall():
+        db.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
 
     db.execute((SQL_DIR / "schema.sql").read_text(encoding="utf-8"))
 
