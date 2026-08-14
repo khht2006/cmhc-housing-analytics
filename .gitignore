@@ -2,9 +2,13 @@
 # 100 MB and `python run_all.py` recreates all of it in under a minute.
 data/
 
-# Power BI files
+# Power BI's own saved files. The .pbip project IS checked in (it's just text,
+# and make_powerbi_project.py generates it), but these are binary/local.
 *.pbix
 *.pbit
+powerbi/**/.pbi/
+powerbi/**/*.abf
+powerbi/**/cache.abf
 
 # Python
 __pycache__/

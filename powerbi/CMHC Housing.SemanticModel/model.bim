@@ -1,0 +1,2467 @@
+{
+  "name": "SemanticModel",
+  "compatibilityLevel": 1567,
+  "model": {
+    "culture": "en-US",
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "sourceQueryCulture": "en-US",
+    "dataAccessOptions": {
+      "legacyRedirects": true,
+      "returnErrorValuesAsNull": true
+    },
+    "expressions": [
+      {
+        "name": "DataFolder",
+        "kind": "m",
+        "expression": "\"C:\\\\Users\\\\12898\\\\Projects\\\\cmhc-housing-analytics\\\\data\\\\exports\" meta [IsParameterQuery=true, Type=\"Text\", IsParameterQueryRequired=true]"
+      }
+    ],
+    "tables": [
+      {
+        "name": "_Measures",
+        "columns": [
+          {
+            "name": "Column1",
+            "dataType": "string",
+            "sourceColumn": "Column1",
+            "isHidden": true,
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "_Measures",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = #table({\"Column1\"}, {{\"\"}})",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ],
+        "measures": [
+          {
+            "name": "One Coverage Selected",
+            "expression": [
+              "DISTINCTCOUNT ( dim_coverage[coverage_name] ) = 1"
+            ]
+          },
+          {
+            "name": "Coverage Warning",
+            "expression": [
+              "IF (",
+              "    NOT [One Coverage Selected],",
+              "    \"Pick ONE coverage. The metro areas are already inside the towns figure, so adding both counts houses twice.\"",
+              ")"
+            ]
+          },
+          {
+            "name": "Housing Starts",
+            "expression": [
+              "IF (",
+              "    [One Coverage Selected],",
+              "    CALCULATE (",
+              "        SUM ( fact_housing_activity[units] ),",
+              "        dim_construction_stage[stage_short] = \"Starts\",",
+              "        dim_geography[is_aggregate] = FALSE ()",
+              "    )",
+              ")"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "Housing Completions",
+            "expression": [
+              "IF (",
+              "    [One Coverage Selected],",
+              "    CALCULATE (",
+              "        SUM ( fact_housing_activity[units] ),",
+              "        dim_construction_stage[stage_short] = \"Completions\",",
+              "        dim_geography[is_aggregate] = FALSE ()",
+              "    )",
+              ")"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "Under Construction",
+            "expression": [
+              "IF (",
+              "    [One Coverage Selected],",
+              "    CALCULATE (",
+              "        SUM ( fact_housing_activity[units] ),",
+              "        dim_construction_stage[stage_short] = \"Under construction\",",
+              "        dim_geography[is_aggregate] = FALSE (),",
+              "        LASTDATE ( dim_date[date] )",
+              "    )",
+              ")"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "Housing Starts Last Year",
+            "expression": [
+              "CALCULATE ( [Housing Starts], DATEADD ( dim_date[date], -12, MONTH ) )"
+            ]
+          },
+          {
+            "name": "Housing Starts Change",
+            "expression": [
+              "[Housing Starts] - [Housing Starts Last Year]"
+            ]
+          },
+          {
+            "name": "Housing Starts Change %",
+            "expression": [
+              "DIVIDE ( [Housing Starts Change], [Housing Starts Last Year] )"
+            ],
+            "formatString": "0.0%"
+          },
+          {
+            "name": "Housing Starts 12 Months",
+            "expression": [
+              "CALCULATE (",
+              "    [Housing Starts],",
+              "    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )",
+              ")"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "Housing Completions 12 Months",
+            "expression": [
+              "CALCULATE (",
+              "    [Housing Completions],",
+              "    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )",
+              ")"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "Completion Ratio",
+            "expression": [
+              "DIVIDE ( [Housing Completions 12 Months], [Housing Starts 12 Months] )"
+            ],
+            "formatString": "0.00"
+          },
+          {
+            "name": "Backlog Months",
+            "expression": [
+              "DIVIDE ( [Under Construction], DIVIDE ( [Housing Completions 12 Months], 12 ) )"
+            ],
+            "formatString": "0.0"
+          },
+          {
+            "name": "Backlog Months Last Year",
+            "expression": [
+              "CALCULATE ( [Backlog Months], DATEADD ( dim_date[date], -12, MONTH ) )"
+            ],
+            "formatString": "0.0"
+          },
+          {
+            "name": "Backlog Months Change",
+            "expression": [
+              "[Backlog Months] - [Backlog Months Last Year]"
+            ],
+            "formatString": "+0.0;-0.0;0.0"
+          },
+          {
+            "name": "Unsold Inventory",
+            "expression": [
+              "CALCULATE (",
+              "    SUM ( fact_market_absorption[unabsorbed_inventory] ),",
+              "    dim_geography[is_aggregate] = FALSE (),",
+              "    LASTDATE ( dim_date[date] )",
+              ")"
+            ]
+          },
+          {
+            "name": "Homes Sold Or Rented",
+            "expression": [
+              "CALCULATE (",
+              "    SUM ( fact_market_absorption[absorptions] ),",
+              "    dim_geography[is_aggregate] = FALSE ()",
+              ")"
+            ]
+          },
+          {
+            "name": "Percent Unsold",
+            "expression": [
+              "DIVIDE ( [Unsold Inventory], [Unsold Inventory] + [Homes Sold Or Rented] )"
+            ],
+            "formatString": "0.0%"
+          },
+          {
+            "name": "Total Mortgages",
+            "expression": [
+              "SUM ( fact_mortgage_arrears[total_mortgages] )"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "Mortgages In Arrears",
+            "expression": [
+              "SUM ( fact_mortgage_arrears[mortgages_in_arrears] )"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "Arrears Rate",
+            "expression": [
+              "DIVIDE ( [Mortgages In Arrears], [Total Mortgages] )"
+            ],
+            "formatString": "0.00%"
+          },
+          {
+            "name": "Arrears Rate Last Year",
+            "expression": [
+              "CALCULATE ( [Arrears Rate], DATEADD ( dim_date[date], -12, MONTH ) )"
+            ],
+            "formatString": "0.00%"
+          },
+          {
+            "name": "Arrears Rate Change (points)",
+            "expression": [
+              "( [Arrears Rate] - [Arrears Rate Last Year] ) * 100"
+            ]
+          },
+          {
+            "name": "Arrears Rate 3 Month Average",
+            "expression": [
+              "AVERAGEX (",
+              "    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -3, MONTH ),",
+              "    [Arrears Rate]",
+              ")"
+            ],
+            "formatString": "0.00%"
+          },
+          {
+            "name": "Mortgage Rate",
+            "expression": [
+              "AVERAGE ( fact_mortgage_rate[rate_5year] )"
+            ],
+            "formatString": "0.00"
+          },
+          {
+            "name": "Mortgage Rate 18 Months Ago",
+            "expression": [
+              "CALCULATE ( [Mortgage Rate], DATEADD ( dim_date[date], -18, MONTH ) )"
+            ],
+            "formatString": "0.00"
+          },
+          {
+            "name": "Share Of National Change",
+            "expression": [
+              "VAR ThisPlace = [Housing Starts Change]",
+              "VAR TotalMovement =",
+              "    SUMX (",
+              "        CALCULATETABLE (",
+              "            VALUES ( dim_geography[geo_name] ),",
+              "            REMOVEFILTERS ( dim_geography ),",
+              "            dim_geography[is_aggregate] = FALSE (),",
+              "            dim_geography[geo_level] = SELECTEDVALUE ( dim_geography[geo_level] )",
+              "        ),",
+              "        ABS ( [Housing Starts Change] )",
+              "    )",
+              "RETURN DIVIDE ( ThisPlace, TotalMovement )"
+            ],
+            "formatString": "0.0%"
+          },
+          {
+            "name": "Headline",
+            "expression": [
+              "VAR Change = [Housing Starts Change]",
+              "VAR Percent = [Housing Starts Change %]",
+              "VAR UpOrDown = IF ( Change >= 0, \"up\", \"down\" )",
+              "VAR Place = SELECTEDVALUE ( dim_geography[geo_name], \"Canada\" )",
+              "RETURN",
+              "    IF (",
+              "        ISBLANK ( Change ),",
+              "        \"No comparable month last year\",",
+              "        Place & \": housing starts \" & UpOrDown & \" \"",
+              "            & FORMAT ( ABS ( Change ), \"#,0\" ) & \" homes (\"",
+              "            & FORMAT ( ABS ( Percent ), \"0.0%\" ) & \") vs the same month last year\"",
+              "    )"
+            ]
+          },
+          {
+            "name": "New Mortgage Lending",
+            "expression": [
+              "CALCULATE (",
+              "    SUM ( fact_mortgage_originations[funds_advanced] ),",
+              "    dim_credit_product[is_total] = FALSE ()",
+              ")"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "New Mortgage Lending 12 Months",
+            "expression": [
+              "CALCULATE (",
+              "    [New Mortgage Lending],",
+              "    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )",
+              ")"
+            ],
+            "formatString": "#,0"
+          },
+          {
+            "name": "Average Rate On New Lending",
+            "expression": [
+              "DIVIDE (",
+              "    SUMX (",
+              "        fact_mortgage_originations,",
+              "        fact_mortgage_originations[interest_rate] * fact_mortgage_originations[funds_advanced]",
+              "    ),",
+              "    SUM ( fact_mortgage_originations[funds_advanced] )",
+              ")"
+            ],
+            "formatString": "0.00"
+          },
+          {
+            "name": "Price Index",
+            "expression": [
+              "AVERAGE ( fact_price_index[index_value] )"
+            ],
+            "formatString": "0.0"
+          },
+          {
+            "name": "Price Index Change %",
+            "expression": [
+              "VAR LastYear = CALCULATE ( [Price Index], DATEADD ( dim_date[date], -12, MONTH ) )",
+              "RETURN DIVIDE ( [Price Index] - LastYear, LastYear )"
+            ],
+            "formatString": "0.0%"
+          },
+          {
+            "name": "Checks Run",
+            "expression": [
+              "COUNTROWS ( check_results )"
+            ]
+          },
+          {
+            "name": "Checks Passed",
+            "expression": [
+              "CALCULATE ( COUNTROWS ( check_results ), check_results[passed] = TRUE () )"
+            ]
+          },
+          {
+            "name": "Check Pass Rate",
+            "expression": [
+              "DIVIDE ( [Checks Passed], [Checks Run] )"
+            ],
+            "formatString": "0.00%"
+          },
+          {
+            "name": "Data Quality Status",
+            "expression": [
+              "VAR Failed = [Checks Run] - [Checks Passed]",
+              "RETURN",
+              "    IF (",
+              "        Failed = 0,",
+              "        \"All numbers match the published figures\",",
+              "        FORMAT ( Failed, \"#,0\" ) & \" numbers need review\"",
+              "    )"
+            ]
+          },
+          {
+            "name": "Data Through",
+            "expression": [
+              "\"Data up to \" & FORMAT ( MAX ( dim_date[date] ), \"MMMM yyyy\" )"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "dim_date",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "date",
+            "dataType": "dateTime",
+            "sourceColumn": "date",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "formatString": "yyyy-mm-dd",
+            "isKey": true
+          },
+          {
+            "name": "year_month",
+            "dataType": "string",
+            "sourceColumn": "year_month",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "year",
+            "dataType": "int64",
+            "sourceColumn": "year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "quarter",
+            "dataType": "int64",
+            "sourceColumn": "quarter",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "month",
+            "dataType": "int64",
+            "sourceColumn": "month",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "month_name",
+            "dataType": "string",
+            "sourceColumn": "month_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "sortByColumn": "month"
+          },
+          {
+            "name": "quarter_name",
+            "dataType": "string",
+            "sourceColumn": "quarter_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_date",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\dim_date.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ],
+        "dataCategory": "Time"
+      },
+      {
+        "name": "dim_geography",
+        "columns": [
+          {
+            "name": "geography_key",
+            "dataType": "int64",
+            "sourceColumn": "geography_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "geo_name",
+            "dataType": "string",
+            "sourceColumn": "geo_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "sortByColumn": "sort_order"
+          },
+          {
+            "name": "geo_level",
+            "dataType": "string",
+            "sourceColumn": "geo_level",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "province_name",
+            "dataType": "string",
+            "sourceColumn": "province_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "province_code",
+            "dataType": "string",
+            "sourceColumn": "province_code",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "arrears_region",
+            "dataType": "string",
+            "sourceColumn": "arrears_region",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "is_aggregate",
+            "dataType": "boolean",
+            "sourceColumn": "is_aggregate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "sort_order",
+            "dataType": "int64",
+            "sourceColumn": "sort_order",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_geography",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\dim_geography.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_arrears_region",
+        "columns": [
+          {
+            "name": "arrears_region_key",
+            "dataType": "int64",
+            "sourceColumn": "arrears_region_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "region_name",
+            "dataType": "string",
+            "sourceColumn": "region_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "sortByColumn": "sort_order"
+          },
+          {
+            "name": "region_code",
+            "dataType": "string",
+            "sourceColumn": "region_code",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "covers_provinces",
+            "dataType": "string",
+            "sourceColumn": "covers_provinces",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "is_national",
+            "dataType": "boolean",
+            "sourceColumn": "is_national",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "sort_order",
+            "dataType": "int64",
+            "sourceColumn": "sort_order",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_arrears_region",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\dim_arrears_region.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_coverage",
+        "columns": [
+          {
+            "name": "coverage_key",
+            "dataType": "int64",
+            "sourceColumn": "coverage_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "coverage_name",
+            "dataType": "string",
+            "sourceColumn": "coverage_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "description",
+            "dataType": "string",
+            "sourceColumn": "description",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "is_default",
+            "dataType": "boolean",
+            "sourceColumn": "is_default",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_coverage",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\dim_coverage.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_dwelling_type",
+        "columns": [
+          {
+            "name": "dwelling_type_key",
+            "dataType": "int64",
+            "sourceColumn": "dwelling_type_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "dwelling_type_name",
+            "dataType": "string",
+            "sourceColumn": "dwelling_type_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "sortByColumn": "sort_order"
+          },
+          {
+            "name": "dwelling_category",
+            "dataType": "string",
+            "sourceColumn": "dwelling_category",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "is_total",
+            "dataType": "boolean",
+            "sourceColumn": "is_total",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "sort_order",
+            "dataType": "int64",
+            "sourceColumn": "sort_order",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_dwelling_type",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\dim_dwelling_type.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_construction_stage",
+        "columns": [
+          {
+            "name": "stage_key",
+            "dataType": "int64",
+            "sourceColumn": "stage_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "stage_name",
+            "dataType": "string",
+            "sourceColumn": "stage_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "stage_short",
+            "dataType": "string",
+            "sourceColumn": "stage_short",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "sortByColumn": "stage_order"
+          },
+          {
+            "name": "stage_order",
+            "dataType": "int64",
+            "sourceColumn": "stage_order",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_construction_stage",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\dim_construction_stage.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_credit_product",
+        "columns": [
+          {
+            "name": "credit_product_key",
+            "dataType": "int64",
+            "sourceColumn": "credit_product_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "product_name",
+            "dataType": "string",
+            "sourceColumn": "product_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "rate_type",
+            "dataType": "string",
+            "sourceColumn": "rate_type",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "insurance_status",
+            "dataType": "string",
+            "sourceColumn": "insurance_status",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "is_total",
+            "dataType": "boolean",
+            "sourceColumn": "is_total",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_credit_product",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\dim_credit_product.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_price_component",
+        "columns": [
+          {
+            "name": "price_component_key",
+            "dataType": "int64",
+            "sourceColumn": "price_component_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "component_name",
+            "dataType": "string",
+            "sourceColumn": "component_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_price_component",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\dim_price_component.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "fact_housing_activity",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "geography_key",
+            "dataType": "int64",
+            "sourceColumn": "geography_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "dwelling_type_key",
+            "dataType": "int64",
+            "sourceColumn": "dwelling_type_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "stage_key",
+            "dataType": "int64",
+            "sourceColumn": "stage_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "coverage_key",
+            "dataType": "int64",
+            "sourceColumn": "coverage_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "units",
+            "dataType": "decimal",
+            "sourceColumn": "units",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fact_housing_activity",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\fact_housing_activity.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "fact_market_absorption",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "geography_key",
+            "dataType": "int64",
+            "sourceColumn": "geography_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "dwelling_type_key",
+            "dataType": "int64",
+            "sourceColumn": "dwelling_type_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "absorptions",
+            "dataType": "decimal",
+            "sourceColumn": "absorptions",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "unabsorbed_inventory",
+            "dataType": "decimal",
+            "sourceColumn": "unabsorbed_inventory",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fact_market_absorption",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\fact_market_absorption.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "fact_unoccupied_housing",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "geography_key",
+            "dataType": "int64",
+            "sourceColumn": "geography_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "dwelling_type_key",
+            "dataType": "int64",
+            "sourceColumn": "dwelling_type_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "unoccupied_units",
+            "dataType": "decimal",
+            "sourceColumn": "unoccupied_units",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fact_unoccupied_housing",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\fact_unoccupied_housing.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "fact_mortgage_arrears",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "arrears_region_key",
+            "dataType": "int64",
+            "sourceColumn": "arrears_region_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "total_mortgages",
+            "dataType": "int64",
+            "sourceColumn": "total_mortgages",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "mortgages_in_arrears",
+            "dataType": "int64",
+            "sourceColumn": "mortgages_in_arrears",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "arrears_rate",
+            "dataType": "decimal",
+            "sourceColumn": "arrears_rate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "is_hidden",
+            "dataType": "boolean",
+            "sourceColumn": "is_hidden",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fact_mortgage_arrears",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\fact_mortgage_arrears.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "fact_mortgage_originations",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "credit_product_key",
+            "dataType": "int64",
+            "sourceColumn": "credit_product_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "funds_advanced",
+            "dataType": "decimal",
+            "sourceColumn": "funds_advanced",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "interest_rate",
+            "dataType": "decimal",
+            "sourceColumn": "interest_rate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fact_mortgage_originations",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\fact_mortgage_originations.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "fact_price_index",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "geography_key",
+            "dataType": "int64",
+            "sourceColumn": "geography_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "price_component_key",
+            "dataType": "int64",
+            "sourceColumn": "price_component_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "index_value",
+            "dataType": "decimal",
+            "sourceColumn": "index_value",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fact_price_index",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\fact_price_index.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "fact_mortgage_rate",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "rate_5year",
+            "dataType": "decimal",
+            "sourceColumn": "rate_5year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fact_mortgage_rate",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\fact_mortgage_rate.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "pipeline_health",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "date",
+            "dataType": "dateTime",
+            "sourceColumn": "date",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "formatString": "yyyy-mm-dd"
+          },
+          {
+            "name": "year_month",
+            "dataType": "string",
+            "sourceColumn": "year_month",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "year",
+            "dataType": "int64",
+            "sourceColumn": "year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "geo_name",
+            "dataType": "string",
+            "sourceColumn": "geo_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "geo_level",
+            "dataType": "string",
+            "sourceColumn": "geo_level",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "province_name",
+            "dataType": "string",
+            "sourceColumn": "province_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "arrears_region",
+            "dataType": "string",
+            "sourceColumn": "arrears_region",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "coverage_name",
+            "dataType": "string",
+            "sourceColumn": "coverage_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "dwelling_type_name",
+            "dataType": "string",
+            "sourceColumn": "dwelling_type_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "dwelling_category",
+            "dataType": "string",
+            "sourceColumn": "dwelling_category",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "starts",
+            "dataType": "decimal",
+            "sourceColumn": "starts",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "under_construction",
+            "dataType": "decimal",
+            "sourceColumn": "under_construction",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "completions",
+            "dataType": "decimal",
+            "sourceColumn": "completions",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "starts_last_12_months",
+            "dataType": "decimal",
+            "sourceColumn": "starts_last_12_months",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "completions_last_12_months",
+            "dataType": "decimal",
+            "sourceColumn": "completions_last_12_months",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "completion_ratio",
+            "dataType": "double",
+            "sourceColumn": "completion_ratio",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "backlog_months",
+            "dataType": "double",
+            "sourceColumn": "backlog_months",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "pipeline_health",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\pipeline_health.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "what_changed",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "year_month",
+            "dataType": "string",
+            "sourceColumn": "year_month",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "year",
+            "dataType": "int64",
+            "sourceColumn": "year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "geo_name",
+            "dataType": "string",
+            "sourceColumn": "geo_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "geo_level",
+            "dataType": "string",
+            "sourceColumn": "geo_level",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "province_name",
+            "dataType": "string",
+            "sourceColumn": "province_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "coverage_name",
+            "dataType": "string",
+            "sourceColumn": "coverage_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "units",
+            "dataType": "decimal",
+            "sourceColumn": "units",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "units_last_year",
+            "dataType": "decimal",
+            "sourceColumn": "units_last_year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "change_vs_last_year",
+            "dataType": "decimal",
+            "sourceColumn": "change_vs_last_year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "percent_change",
+            "dataType": "double",
+            "sourceColumn": "percent_change",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "share_of_national_change",
+            "dataType": "double",
+            "sourceColumn": "share_of_national_change",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "what_changed",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\what_changed.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "arrears_trend",
+        "columns": [
+          {
+            "name": "date_key",
+            "dataType": "int64",
+            "sourceColumn": "date_key",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "name": "date",
+            "dataType": "dateTime",
+            "sourceColumn": "date",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "formatString": "yyyy-mm-dd"
+          },
+          {
+            "name": "year_month",
+            "dataType": "string",
+            "sourceColumn": "year_month",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "year",
+            "dataType": "int64",
+            "sourceColumn": "year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "region_name",
+            "dataType": "string",
+            "sourceColumn": "region_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "covers_provinces",
+            "dataType": "string",
+            "sourceColumn": "covers_provinces",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "is_national",
+            "dataType": "boolean",
+            "sourceColumn": "is_national",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "total_mortgages",
+            "dataType": "int64",
+            "sourceColumn": "total_mortgages",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "mortgages_in_arrears",
+            "dataType": "int64",
+            "sourceColumn": "mortgages_in_arrears",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "arrears_rate",
+            "dataType": "decimal",
+            "sourceColumn": "arrears_rate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "is_hidden",
+            "dataType": "boolean",
+            "sourceColumn": "is_hidden",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "arrears_rate_last_year",
+            "dataType": "decimal",
+            "sourceColumn": "arrears_rate_last_year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "change_vs_last_year",
+            "dataType": "decimal",
+            "sourceColumn": "change_vs_last_year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "mortgage_rate_now",
+            "dataType": "decimal",
+            "sourceColumn": "mortgage_rate_now",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "mortgage_rate_18_months_ago",
+            "dataType": "decimal",
+            "sourceColumn": "mortgage_rate_18_months_ago",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "arrears_trend",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\arrears_trend.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "check_results",
+        "columns": [
+          {
+            "name": "check_name",
+            "dataType": "string",
+            "sourceColumn": "check_name",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "detail",
+            "dataType": "string",
+            "sourceColumn": "detail",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "our_value",
+            "dataType": "decimal",
+            "sourceColumn": "our_value",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "published_value",
+            "dataType": "decimal",
+            "sourceColumn": "published_value",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "difference",
+            "dataType": "decimal",
+            "sourceColumn": "difference",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "passed",
+            "dataType": "boolean",
+            "sourceColumn": "passed",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "checked_at",
+            "dataType": "dateTime",
+            "sourceColumn": "checked_at",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ],
+            "formatString": "yyyy-mm-dd"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "check_results",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Parquet.Document(File.Contents(DataFolder & \"\\check_results.parquet\"))",
+                "in",
+                "    Source"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "name": "00da04aa-132d-5561-85e4-774527572d87",
+        "fromTable": "fact_housing_activity",
+        "fromColumn": "date_key",
+        "toTable": "dim_date",
+        "toColumn": "date_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "545c21da-ba54-58e4-921b-5be8cdede849",
+        "fromTable": "fact_housing_activity",
+        "fromColumn": "geography_key",
+        "toTable": "dim_geography",
+        "toColumn": "geography_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "ceb53aa4-1201-5131-b320-294574efb12b",
+        "fromTable": "fact_housing_activity",
+        "fromColumn": "dwelling_type_key",
+        "toTable": "dim_dwelling_type",
+        "toColumn": "dwelling_type_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "c2a7b53e-3545-5d65-872e-96c0ea5e1afe",
+        "fromTable": "fact_housing_activity",
+        "fromColumn": "stage_key",
+        "toTable": "dim_construction_stage",
+        "toColumn": "stage_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "f3ec8a5b-87a1-55a3-a129-a1ead04684a9",
+        "fromTable": "fact_housing_activity",
+        "fromColumn": "coverage_key",
+        "toTable": "dim_coverage",
+        "toColumn": "coverage_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "1c9db904-b66a-5b52-879b-0dcf1bc3ed44",
+        "fromTable": "fact_market_absorption",
+        "fromColumn": "date_key",
+        "toTable": "dim_date",
+        "toColumn": "date_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "0e2e1421-4c0b-58da-a594-5361bfe95aac",
+        "fromTable": "fact_market_absorption",
+        "fromColumn": "geography_key",
+        "toTable": "dim_geography",
+        "toColumn": "geography_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "8408765d-276e-5343-a1bb-91de334e27b7",
+        "fromTable": "fact_market_absorption",
+        "fromColumn": "dwelling_type_key",
+        "toTable": "dim_dwelling_type",
+        "toColumn": "dwelling_type_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "9b485be0-14bf-5e07-9af7-8521a6582a48",
+        "fromTable": "fact_unoccupied_housing",
+        "fromColumn": "date_key",
+        "toTable": "dim_date",
+        "toColumn": "date_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "fb7834ce-9e49-566a-85ab-a0211d96ca66",
+        "fromTable": "fact_unoccupied_housing",
+        "fromColumn": "geography_key",
+        "toTable": "dim_geography",
+        "toColumn": "geography_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "eb39e51f-c2ec-5183-9fc5-0ab5bc0b8d4f",
+        "fromTable": "fact_unoccupied_housing",
+        "fromColumn": "dwelling_type_key",
+        "toTable": "dim_dwelling_type",
+        "toColumn": "dwelling_type_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "970cf7df-6bad-50d7-9371-e0b34b2c0bb6",
+        "fromTable": "fact_mortgage_arrears",
+        "fromColumn": "date_key",
+        "toTable": "dim_date",
+        "toColumn": "date_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "b3848bc1-e5f9-5e19-9d2e-d9c78f6679e4",
+        "fromTable": "fact_mortgage_arrears",
+        "fromColumn": "arrears_region_key",
+        "toTable": "dim_arrears_region",
+        "toColumn": "arrears_region_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "fa910a19-d110-5c25-8066-6dbb1d907db5",
+        "fromTable": "fact_mortgage_originations",
+        "fromColumn": "date_key",
+        "toTable": "dim_date",
+        "toColumn": "date_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "c3a3dc48-d2e8-5efd-a402-2c8320ac55e7",
+        "fromTable": "fact_mortgage_originations",
+        "fromColumn": "credit_product_key",
+        "toTable": "dim_credit_product",
+        "toColumn": "credit_product_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "2866e9bb-b33c-5116-8dd5-92775886552c",
+        "fromTable": "fact_price_index",
+        "fromColumn": "date_key",
+        "toTable": "dim_date",
+        "toColumn": "date_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "77d80a30-9b9b-5835-9564-6bd53702f1a3",
+        "fromTable": "fact_price_index",
+        "fromColumn": "geography_key",
+        "toTable": "dim_geography",
+        "toColumn": "geography_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "c81d9bf5-8c9d-5a54-a881-729d4d842213",
+        "fromTable": "fact_price_index",
+        "fromColumn": "price_component_key",
+        "toTable": "dim_price_component",
+        "toColumn": "price_component_key",
+        "crossFilteringBehavior": "oneDirection"
+      },
+      {
+        "name": "90488740-f269-56f7-817e-c748c19acc3f",
+        "fromTable": "fact_mortgage_rate",
+        "fromColumn": "date_key",
+        "toTable": "dim_date",
+        "toColumn": "date_key",
+        "crossFilteringBehavior": "oneDirection"
+      }
+    ],
+    "annotations": [
+      {
+        "name": "PBI_QueryOrder",
+        "value": "[\"DataFolder\", \"dim_date\", \"dim_geography\", \"dim_arrears_region\", \"dim_coverage\", \"dim_dwelling_type\", \"dim_construction_stage\", \"dim_credit_product\", \"dim_price_component\", \"fact_housing_activity\", \"fact_market_absorption\", \"fact_unoccupied_housing\", \"fact_mortgage_arrears\", \"fact_mortgage_originations\", \"fact_price_index\", \"fact_mortgage_rate\", \"pipeline_health\", \"what_changed\", \"arrears_trend\", \"check_results\"]"
+      }
+    ]
+  }
+}

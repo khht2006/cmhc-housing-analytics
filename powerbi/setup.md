@@ -1,11 +1,40 @@
 # Building the dashboard in Power BI
 
-About 15 minutes. Do this once — after that, updating is just clicking Refresh.
-
 You need **Power BI Desktop** (free from the Microsoft Store), and you need to
 have run `python run_all.py` first so `data/exports/` has files in it.
 
+There are two ways to do this. **Try the quick way first.**
+
 ---
+
+# The quick way (1 minute)
+
+```bash
+python make_powerbi_project.py
+```
+
+Then open **`powerbi/CMHC Housing.pbip`**.
+
+That script writes out the whole Power BI model as text files — all 20 tables,
+19 relationships, hidden ID columns, sort orders, the date table marking, and
+all 37 measures. Power BI reads them and everything is already wired up.
+
+It reads the measures straight out of `measures.dax`, so if you change a
+measure, re-run the script and it updates.
+
+**The first time you open it**, Power BI may ask permission to read the Parquet
+files — click **Continue**, then set the privacy level to **Organizational** (or
+just **Ignore privacy levels**) and it'll load.
+
+If it opens and you can see the tables in the Data pane on the right, skip to
+[step 6](#6-build-the-pages) and start building visuals.
+
+**If Power BI won't open it**, no problem — do it by hand below. The manual
+route always works.
+
+---
+
+# The manual way (about 15 minutes)
 
 ## 1. Load the files
 

@@ -66,8 +66,16 @@ second half checks the database and skips if you haven't built it yet.
 
 ### 5. Build the dashboard
 
-Open Power BI Desktop and follow [`powerbi/setup.md`](powerbi/setup.md). It's
-about 15 minutes of clicking, all written out step by step.
+```bash
+python make_powerbi_project.py
+```
+
+Then open `powerbi/CMHC Housing.pbip` in Power BI Desktop.
+
+That script writes the Power BI model out as text files — all the tables,
+relationships, sort orders and 37 measures already set up — so you don't have to
+build it by hand. [`powerbi/setup.md`](powerbi/setup.md) explains it, and also
+covers doing it manually if you'd rather (or if the script's output won't open).
 
 ---
 
@@ -86,6 +94,7 @@ through.
 | `export.py` | **Step 4** — writes files for Power BI |
 | `run_all.py` | Runs steps 1–4 in order |
 | `explore.py` | Example questions you can ask the data |
+| `make_powerbi_project.py` | Builds the Power BI model for you, so you don't click it together by hand |
 | `test_project.py` | Tests |
 | `sql/schema.sql` | The tables |
 | `sql/views.sql` | Saved queries for the two main questions |
