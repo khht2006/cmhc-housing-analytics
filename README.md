@@ -70,7 +70,8 @@ second half checks the database and skips if you haven't built it yet.
 python make_powerbi_project.py
 ```
 
-Then open `powerbi/CMHC Housing.pbip` in Power BI Desktop.
+Then open `powerbi/CMHC Housing.pbip` in Power BI Desktop and click
+**Home → Refresh** to load the data.
 
 That script writes the Power BI model out as text files — all the tables,
 relationships, sort orders and 37 measures already set up — so you don't have to

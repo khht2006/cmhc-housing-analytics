@@ -22,15 +22,27 @@ all 37 measures. Power BI reads them and everything is already wired up.
 It reads the measures straight out of `measures.dax`, so if you change a
 measure, re-run the script and it updates.
 
-**The first time you open it**, Power BI may ask permission to read the Parquet
-files — click **Continue**, then set the privacy level to **Organizational** (or
-just **Ignore privacy levels**) and it'll load.
+### After it opens: load the data
 
-If it opens and you can see the tables in the Data pane on the right, skip to
-[step 6](#6-build-the-pages) and start building visuals.
+Opening the project gives you the **structure** — you'll see all the tables and
+measures listed in the Data pane on the right, but the tables will be empty.
+That's normal. Power BI doesn't read your files until you say so.
 
-**If Power BI won't open it**, no problem — do it by hand below. The manual
-route always works.
+1. Click **Home → Refresh**.
+2. Power BI will ask about accessing local files. Click **Continue**.
+3. If it asks about **privacy levels**, choose **Organizational** for the folder
+   (or tick *Ignore Privacy Levels* — everything here is public data on your own
+   machine).
+4. Wait about 30 seconds while it reads the 19 Parquet files.
+
+You'll know it worked when clicking a table in the Data pane shows actual rows.
+
+Then jump to [step 6](#6-build-the-pages) and start building visuals — the
+relationships, sort orders, hidden ID columns and all 37 measures are already
+set up.
+
+**If Power BI won't open the project at all**, no problem — build it by hand
+below. The manual route always works.
 
 ---
 
